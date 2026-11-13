@@ -4,21 +4,24 @@ import requests
 
 from fastapi import FastAPI, Request, HTTPException
 
-app = FastAPI(title="Detector de Placas")
+app = FastAPI(title="Detector de Placas Integrado")
 
 API_URL = "https://api.platerecognizer.com/v1/plate-reader/"
+API_IA = "https://detector-placas-ia.onrender.com/detectar"
 
 
 @app.get("/")
 def inicio():
     return {
         "estado": "activo",
-        "mensaje": "API Detector de Placas funcionando"
+        "mensaje": "API Detector de Placas funcionando",
+        "integracion": "PictoBlox + Plate Recognizer"
     }
 
 
 @app.post("/detectar")
 async def detectar_placa(request: Request):
+
     token = os.getenv("PLATE_RECOGNIZER_TOKEN")
 
     if not token:
@@ -41,6 +44,25 @@ async def detectar_placa(request: Request):
             detail="La imagen supera los 10 MB"
         )
 
+    # 1. Detectar la placa con el modelo de PictoBlox
+    deteccion_ia = None
+
+    try:
+        respuesta_ia = requests.post(
+            API_IA,
+            data=imagen,
+            headers={"Content-Type": "image/jpeg"},
+            timeout=40
+        )
+
+        respuesta_ia.raise_for_status()
+        deteccion_ia = respuesta_ia.json()
+
+    except (requests.RequestException, ValueError):
+        # Si falla PictoBlox, conservar el OCR original
+        deteccion_ia = None
+
+    # 2. Reconocer el número con Plate Recognizer
     headers = {"Authorization": f"Token {token}"}
 
     try:
@@ -53,6 +75,7 @@ async def detectar_placa(request: Request):
             data={"regions": "co"},
             timeout=40
         )
+
     except requests.RequestException:
         raise HTTPException(
             status_code=502,
@@ -73,100 +96,26 @@ async def detectar_placa(request: Request):
             "detectada": False,
             "mensaje": "No se detectó ninguna placa",
             "placa": "",
-            "coordenadas": None
+            "coordenadas": None,
+            "deteccion_ia": deteccion_ia
         }
 
     primera = resultados[0]
 
     placa = primera.get("plate", "")
-    coordenadas = primera.get("box", {})
     confianza = primera.get("score", 0)
+
+    # Coordenadas de PictoBlox cuando la IA detecta
+    if deteccion_ia and deteccion_ia.get("detectada"):
+        coordenadas = deteccion_ia.get("coordenadas")
+    else:
+        coordenadas = primera.get("box", {})
 
     return {
         "detectada": True,
         "mensaje": "Placa detectada",
         "placa": placa.upper(),
         "confianza": confianza,
-        "coordenadas": coordenadas
+        "coordenadas": coordenadas,
+        "deteccion_ia": deteccion_ia
     }
-    
-    
-@app.get("/modelo/info")
-def informacion_modelo():
-    ruta = os.path.join(
-        os.path.dirname(__file__),
-        "model.tflite"
-    )
-
-    if not os.path.isfile(ruta):
-        raise HTTPException(
-            status_code=404,
-            detail="No se encontró model.tflite"
-        )
-
-    return {
-        "modelo": "DetectorPlacas_V2",
-        "estado": "archivo encontrado",
-        "tamano_bytes": os.path.getsize(ruta),
-        "mensaje": "Archivo disponible, sin cargar TensorFlow Lite"
-    }
-
-
-@app.get("/modelo/verificar-runtime")
-def verificar_runtime():
-    try:
-        from tflite_runtime.interpreter import Interpreter
-
-        return {
-            "estado": "correcto",
-            "mensaje": "TensorFlow Lite Runtime se importó correctamente"
-        }
-
-    except Exception as error:
-        return {
-            "estado": "error",
-            "detalle": str(error)
-        }
-
-@app.get("/modelo/probar-carga")
-def probar_carga():
-    import subprocess
-    import sys
-
-    codigo = """
-from tflite_runtime.interpreter import Interpreter
-
-modelo = Interpreter(
-    model_path="model.tflite",
-    num_threads=1
-)
-
-print("INTERPRETE_CREADO", flush=True)
-"""
-
-    try:
-        resultado = subprocess.run(
-            [sys.executable, "-c", codigo],
-            capture_output=True,
-            text=True,
-            timeout=15
-        )
-
-        return {
-            "estado": (
-                "correcto"
-                if resultado.returncode == 0
-                else "error"
-            ),
-            "codigo_salida": resultado.returncode,
-            "salida": resultado.stdout[-1000:],
-            "error": resultado.stderr[-1000:]
-        }
-
-    except subprocess.TimeoutExpired:
-        return {
-            "estado": "timeout",
-            "mensaje": "La inicializacion excedio el tiempo limite"
-        }
-
-
