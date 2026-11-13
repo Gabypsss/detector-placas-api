@@ -111,3 +111,19 @@ def informacion_modelo():
         "mensaje": "Archivo disponible, sin cargar TensorFlow Lite"
     }
 
+
+@app.get("/modelo/verificar-runtime")
+def verificar_runtime():
+    try:
+        from tflite_runtime.interpreter import Interpreter
+
+        return {
+            "estado": "correcto",
+            "mensaje": "TensorFlow Lite Runtime se importó correctamente"
+        }
+
+    except Exception as error:
+        return {
+            "estado": "error",
+            "detalle": str(error)
+        }
