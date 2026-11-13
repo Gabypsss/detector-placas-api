@@ -127,3 +127,46 @@ def verificar_runtime():
             "estado": "error",
             "detalle": str(error)
         }
+
+@app.get("/modelo/probar-carga")
+def probar_carga():
+    import subprocess
+    import sys
+
+    codigo = """
+from tflite_runtime.interpreter import Interpreter
+
+modelo = Interpreter(
+    model_path="model.tflite",
+    num_threads=1
+)
+
+print("INTERPRETE_CREADO", flush=True)
+"""
+
+    try:
+        resultado = subprocess.run(
+            [sys.executable, "-c", codigo],
+            capture_output=True,
+            text=True,
+            timeout=15
+        )
+
+        return {
+            "estado": (
+                "correcto"
+                if resultado.returncode == 0
+                else "error"
+            ),
+            "codigo_salida": resultado.returncode,
+            "salida": resultado.stdout[-1000:],
+            "error": resultado.stderr[-1000:]
+        }
+
+    except subprocess.TimeoutExpired:
+        return {
+            "estado": "timeout",
+            "mensaje": "La inicializacion excedio el tiempo limite"
+        }
+
+
