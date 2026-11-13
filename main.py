@@ -89,3 +89,53 @@ async def detectar_placa(request: Request):
         "confianza": confianza,
         "coordenadas": coordenadas
     }
+    
+@app.get("/modelo/info")
+def informacion_modelo():
+    from tflite_runtime.interpreter import Interpreter
+
+    ruta = os.path.join(
+        os.path.dirname(__file__),
+        "model.tflite"
+    )
+
+    if not os.path.isfile(ruta):
+        raise HTTPException(
+            status_code=404,
+            detail="No se encontró model.tflite"
+        )
+
+    try:
+        interprete = Interpreter(model_path=ruta)
+        interprete.allocate_tensors()
+
+        entradas = interprete.get_input_details()
+        salidas = interprete.get_output_details()
+
+        return {
+            "modelo": "DetectorPlacas_V2",
+            "estado": "cargado",
+            "entradas": [
+                {
+                    "nombre": x["name"],
+                    "forma": x["shape"].tolist(),
+                    "tipo": str(x["dtype"])
+                }
+                for x in entradas
+            ],
+            "salidas": [
+                {
+                    "nombre": x["name"],
+                    "forma": x["shape"].tolist(),
+                    "tipo": str(x["dtype"])
+                }
+                for x in salidas
+            ]
+        }
+
+    except Exception as error:
+        raise HTTPException(
+            status_code=500,
+            detail=f"No se pudo cargar el modelo: {type(error).__name__}"
+        )
+
