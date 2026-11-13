@@ -2,3 +2,6 @@
 fastapi
 uvicorn
 requests
+numpy==1.26.4
+Pillow
+tflite-runtime==2.14.0
